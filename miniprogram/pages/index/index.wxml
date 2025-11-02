@@ -1,0 +1,87 @@
+<view class="container">
+  <!-- 顶部卡片 - 绑定码 -->
+  <view class="code-card">
+    <view class="code-label">设备绑定码</view>
+    <view class="code-value">{{bindCode || '加载中...'}}</view>
+    <view class="code-tip">请在Windows客户端输入此绑定码</view>
+    <view class="code-expire" wx:if="{{expireTime}}">
+      有效期至: {{expireTimeStr}}
+    </view>
+    <button class="refresh-btn" bindtap="handleRefresh">更换绑定码</button>
+  </view>
+
+  <!-- 状态指示器 -->
+  <view class="status-section">
+    <view class="status-indicator status-{{sessionStatus}}">
+      <view class="status-icon">
+        <text wx:if="{{sessionStatus === 'waiting'}}">⏳</text>
+        <text wx:elif="{{sessionStatus === 'uploading'}}">📤</text>
+        <text wx:elif="{{sessionStatus === 'processing'}}">🔄</text>
+        <text wx:elif="{{sessionStatus === 'completed'}}">✅</text>
+        <text wx:elif="{{sessionStatus === 'error'}}">❌</text>
+      </view>
+      <view class="status-content">
+        <view class="status-text">{{statusText}}</view>
+        <!-- 新增：显示等待时间 -->
+        <view class="waiting-time" wx:if="{{sessionStatus !== 'waiting' && waitingTime !== '00:00'}}">
+          等待时间: {{waitingTime}}
+        </view>
+      </view>
+    </view>
+    
+    <!-- 手动查询按钮（调试用） -->
+    <button class="query-btn" bindtap="handleManualQuery">🔍 手动查询数据</button>
+  </view>
+
+  <!-- 历史记录列表 -->
+  <view class="history-section" wx:if="{{historyList.length > 0}}">
+    <view class="section-header">
+      <view class="section-title">识别历史</view>
+      <view class="history-count">共 {{historyList.length}} 条</view>
+    </view>
+
+    <!-- 循环显示历史记录 -->
+    <view class="history-list">
+      <view class="history-item" wx:for="{{historyList}}" wx:key="id" wx:for-index="index">
+        <!-- 时间戳和等待时长 -->
+        <view class="history-header">
+          <view class="history-time">🕐 {{item.timestamp}}</view>
+          <view class="history-wait-time">⏱️ {{item.waitTime}}</view>
+        </view>
+
+        <!-- 截图 -->
+        <view class="image-wrapper">
+          <image 
+            class="screenshot-img" 
+            src="{{item.tempImageUrl}}" 
+            mode="widthFix"
+            bindtap="previewImage"
+            data-index="{{index}}"
+          ></image>
+          <view class="image-tip">点击查看大图</view>
+        </view>
+
+        <!-- 分析结果 -->
+        <view class="answer-content">
+          <view class="answer-label">📝 分析结果</view>
+          <view class="answer-text">{{item.answer}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 错误提示 -->
+  <view class="error-section" wx:if="{{errorMsg}}">
+    <view class="error-icon">⚠️</view>
+    <view class="error-text">{{errorMsg}}</view>
+  </view>
+
+  <!-- 使用说明 -->
+  <view class="help-section" wx:if="{{sessionStatus === 'waiting' && historyList.length === 0}}">
+    <view class="help-title">📖 使用说明</view>
+    <view class="help-item">1. 在Windows客户端输入上方绑定码</view>
+    <view class="help-item">2. 按F9键截取屏幕</view>
+    <view class="help-item">3. 等待AI分析结果</view>
+    <view class="help-item">4. 点击图片可查看大图</view>
+  </view>
+</view>
