@@ -8,6 +8,18 @@ const path = require('path');
 const configPath = path.join(__dirname, 'config.json');
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
+// 🆕 从环境变量覆盖配置（优先级高于配置文件）
+config.doubao.api_url = process.env.DOUBAO_API_URL || config.doubao.api_url;
+config.doubao.api_key = process.env.DOUBAO_API_KEY || config.doubao.api_key;
+config.doubao.model_name = process.env.DOUBAO_MODEL_NAME || config.doubao.model_name;
+config.doubao.max_completion_tokens = parseInt(process.env.DOUBAO_MAX_TOKENS) || config.doubao.max_completion_tokens;
+config.doubao.prompt_text = process.env.DOUBAO_PROMPT_TEXT || config.doubao.prompt_text;
+
+// 验证必需配置
+if (!config.doubao.api_key) {
+  console.error('错误: DOUBAO_API_KEY 未配置');
+}
+
 exports.main = async (event, context) => {
   console.log('========== 开始处理上传请求 ==========');
   
