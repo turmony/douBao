@@ -95,13 +95,15 @@ exports.main = async (event, context) => {
       return { success: false, error: '缺少图片数据' };
     }
     
-    // 更新 session 状态为处理中
+    // **关键修复**: 更新 session 状态为处理中，并清空旧的答案
     await db.collection('sessions')
       .where({ openid: binding.openid })
       .update({
         data: {
           imageUrl: uploadedFileID,
           status: 'processing',
+          answer: '',              // 清空旧答案
+          partialAnswer: '',       // 清空流式答案
           errorMsg: '',
           updateTime: now
         }
@@ -110,8 +112,6 @@ exports.main = async (event, context) => {
     // 异步触发分析（不等待结果）
     console.log('触发异步分析...');
     
-    // 使用 setTimeout 模拟异步调用
-    // 在云函数中，即使主函数返回了，这个也会继续执行
     setImmediate(async () => {
       try {
         console.log('开始后台分析任务...');
@@ -139,7 +139,7 @@ exports.main = async (event, context) => {
   }
 };
 
-// 分析图片的异步函数
+// 分析图片的异步函数（支持流式输出）
 async function analyzeImage(openid, imageUrl) {
   const axios = require('axios');
   
@@ -161,7 +161,7 @@ async function analyzeImage(openid, imageUrl) {
     const tempUrl = fileInfo.tempFileURL;
     console.log('临时链接:', tempUrl);
     
-    // 更新状态
+    // 更新状态为分析中
     await db.collection('sessions')
       .where({ openid })
       .update({
@@ -171,20 +171,22 @@ async function analyzeImage(openid, imageUrl) {
         }
       });
     
-    // 调用豆包API
+    // 调用豆包API（流式）
     const apiKey = config.doubao.api_key || process.env.ARK_API_KEY;
     if (!apiKey) {
       throw new Error('API Key 未配置');
     }
     
-    console.log('调用豆包API...');
+    console.log('调用豆包API（流式模式）...');
     const startTime = Date.now();
     
+    // 使用流式请求
     const response = await axios.post(
       config.doubao.api_url,
       {
         model: config.doubao.model_name,
         max_completion_tokens: config.doubao.max_completion_tokens,
+        stream: true,  // 启用流式输出
         messages: [
           {
             content: [
@@ -206,22 +208,85 @@ async function analyzeImage(openid, imageUrl) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`
         },
-        timeout: 120000
+        timeout: 120000,
+        responseType: 'stream'  // 接收流式响应
       }
     );
     
-    const endTime = Date.now();
-    console.log(`API响应成功，耗时: ${(endTime - startTime) / 1000} 秒`);
-    
-    const answer = response.data.choices[0].message.content;
-    console.log('回答长度:', answer.length);
-    
-    // 保存结果
+    // 更新状态为流式输出
     await db.collection('sessions')
       .where({ openid })
       .update({
         data: {
-          answer,
+          status: 'streaming',
+          updateTime: Date.now()
+        }
+      });
+    
+    let fullAnswer = '';
+    let lastUpdateTime = Date.now();
+    const UPDATE_INTERVAL = 500; // 每500ms更新一次数据库
+    
+    // 处理流式响应
+    response.data.on('data', async (chunk) => {
+      const lines = chunk.toString().split('\n').filter(line => line.trim() !== '');
+      
+      for (const line of lines) {
+        const message = line.replace(/^data: /, '');
+        if (message === '[DONE]') {
+          console.log('流式响应完成');
+          continue;
+        }
+        
+        try {
+          const parsed = JSON.parse(message);
+          const content = parsed.choices?.[0]?.delta?.content;
+          
+          if (content) {
+            fullAnswer += content;
+            
+            // 控制更新频率，避免过于频繁
+            const now = Date.now();
+            if (now - lastUpdateTime >= UPDATE_INTERVAL) {
+              console.log('更新流式答案，当前长度:', fullAnswer.length);
+              
+              // 更新数据库
+              await db.collection('sessions')
+                .where({ openid })
+                .update({
+                  data: {
+                    partialAnswer: fullAnswer,
+                    updateTime: now
+                  }
+                });
+              
+              lastUpdateTime = now;
+            }
+          }
+        } catch (e) {
+          // 忽略解析错误
+          console.warn('解析流式数据失败:', e.message);
+        }
+      }
+    });
+    
+    // 等待流式响应完成
+    await new Promise((resolve, reject) => {
+      response.data.on('end', resolve);
+      response.data.on('error', reject);
+    });
+    
+    const endTime = Date.now();
+    console.log(`API响应完成，耗时: ${(endTime - startTime) / 1000} 秒`);
+    console.log('完整回答长度:', fullAnswer.length);
+    
+    // 保存最终结果
+    await db.collection('sessions')
+      .where({ openid })
+      .update({
+        data: {
+          answer: fullAnswer,
+          partialAnswer: '',  // 清空流式答案
           status: 'completed',
           errorMsg: '',
           updateTime: Date.now()
@@ -248,6 +313,7 @@ async function analyzeImage(openid, imageUrl) {
         data: {
           status: 'error',
           errorMsg,
+          partialAnswer: '',  // 清空流式答案
           updateTime: Date.now()
         }
       });
