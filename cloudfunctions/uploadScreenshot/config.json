@@ -13,6 +13,6 @@
     "api_key": "7a1c858c-a122-46b3-a303-2a4f48a9b6e9",
     "model_name": "doubao-seed-1-6-251015",
     "max_completion_tokens": 2048,
-    "prompt_text": "请详细分析这张图片的内容。"
+    "prompt_text": "请分析这张图片的内容，如果是问题请先给出答案，再分析。"
   }
 }
